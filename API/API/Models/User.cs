@@ -18,6 +18,7 @@ namespace API.Models
         [Required]
         public string Password { get; set; }
 
+        public string Salt { get; set; }
         public bool EmailConfirmed { get; set; }
 
     }
