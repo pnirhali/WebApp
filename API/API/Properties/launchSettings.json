@@ -14,8 +14,7 @@
       "launchBrowser": true,
       "launchUrl": "weatherforecast",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "SENDGRID_API_KEY": "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"
+        "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
     "API": {
