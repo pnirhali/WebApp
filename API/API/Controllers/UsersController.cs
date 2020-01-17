@@ -12,6 +12,7 @@ using SendGrid;
 using SendGrid.Helpers.Mail;
 using API.Utils;
 using Microsoft.Extensions.Configuration;
+using System.Globalization;
 
 namespace API.Controllers
 {
@@ -31,8 +32,8 @@ namespace API.Controllers
 
         #region Actions
 
-        //  [Route("api/Users/Register")]
-        [HttpPost("Register")]
+        // route: "/api/Users/Register"
+        [HttpPost(nameof(Register))]
         public async Task<ActionResult> Register([FromBody]User user)
         {
             //If user is registered already
@@ -45,14 +46,14 @@ namespace API.Controllers
                 var password = user.Password;
 
                 // ONE WAY ENCRYPTION: Salted hashing and MD5 encryption algorithm
-                var salt = Guid.NewGuid().ToString();
-                var hashedPassword = HashPasswordWithSalt(Encoding.UTF8.GetBytes(password), Encoding.UTF8.GetBytes(salt));
+                var salt = GenerateSalt();
+                var hashedPassword = HashPasswordWithSalt(Encoding.UTF8.GetBytes(password), salt);
 
                 user.Password = Convert.ToBase64String(hashedPassword);
-                user.Salt = salt;
+                user.Salt = Convert.ToBase64String(salt);
 
                 //create the user
-                var CreatedUser = CreateUser(user, password);
+                var CreatedUser = await CreateUser(user, password);
                 if (CreatedUser.UserId > 0)
                 {
                     var htmlContent = GetHtmlContent(CreatedUser.UserId);
@@ -61,13 +62,42 @@ namespace API.Controllers
 
                     var emailSent = await SendEmailAsync(htmlContent, plainTextContent, ToEmailAddress);
                 }
-                return Ok();
+                return Ok(new { email = user.Email, id = user.UserId });
             }
             catch (Exception ex)
             {
                 return BadRequest(ex.Message);
             }
         }
+
+
+        [HttpGet(nameof(ConfirmEmail))]
+        public async Task<ActionResult> ConfirmEmail([FromQuery] string Email, [FromQuery] string Token)
+        {
+            //1. Get User by email
+            User user = GetUserByEmail(Email);
+            if (user == null)
+            {
+                return BadRequest("User is not register");
+            }
+
+            //2. Decrypt the token and get expriry date
+            var decryptedValue = CryptograpyHelper.Decrypt(Email, user.Salt, Token);
+
+            var urlExpiryDateTime = DateTime.ParseExact(decryptedValue, "yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+            var isUrlValid = urlExpiryDateTime > DateTime.UtcNow ? true : false;
+
+            if (!isUrlValid)
+            {
+                return BadRequest("Email confirmation url is expired");
+            }
+
+            var updatedFlagStatus = await UpdateEmailConfirmationFlag(user);
+
+            return Ok("Updated successfully");
+
+        }
+
 
         #endregion
 
@@ -87,7 +117,7 @@ namespace API.Controllers
             var encryptToken = "";
             if (user != null)
             {
-                encryptToken = CryptograpyHelper.Encrypt(user.Email, user.Salt, Convert.ToString(DateTime.UtcNow.AddDays(1)));
+                encryptToken = CryptograpyHelper.Encrypt(user.Email, user.Salt, DateTime.UtcNow.AddDays(1).ToString("yyyyMMddHHmmss"));
             }
 
             var baseUrl = _configuration.GetValue<string>("AppBaseUrl");
@@ -101,7 +131,12 @@ namespace API.Controllers
             return _context.Users.FirstOrDefault(u => u.UserId == userId);
         }
 
-        private User CreateUser(User user, string password)
+        private User GetUserByEmail(string email)
+        {
+            return _context.Users.FirstOrDefault(u => u.Email == email);
+        }
+
+        private async Task<User> CreateUser(User user, string password)
         {
             // validation
             if (string.IsNullOrWhiteSpace(password))
@@ -112,6 +147,9 @@ namespace API.Controllers
 
             _context.Users.Add(user);
             _context.SaveChanges();
+
+            await _context.SaveChangesAsync();
+
 
             return user;
         }
@@ -173,6 +211,22 @@ namespace API.Controllers
             return false;
 
         }
+
+        private async Task<bool> UpdateEmailConfirmationFlag(User user)
+        {
+            user.EmailConfirmed = true;
+            _context.Entry(user).State = EntityState.Modified;
+            try
+            {
+                await _context.SaveChangesAsync();
+                return true;
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                throw ex;
+            }
+        }
+
 
         #endregion
 

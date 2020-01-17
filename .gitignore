@@ -7,3 +7,4 @@
 /API/API/obj
 /API/API/bin/Debug/netcoreapp3.0
 /API/.vs/API
+/API/API/Controllers/Users1Controller.cs
