@@ -13,6 +13,7 @@ using SendGrid.Helpers.Mail;
 using API.Utils;
 using Microsoft.Extensions.Configuration;
 using System.Globalization;
+using API.DTO;
 
 namespace API.Controllers
 {
@@ -98,6 +99,47 @@ namespace API.Controllers
 
         }
 
+        [HttpPost(nameof(Login))]
+        public ActionResult Login([FromBody] LoginRequest request)
+        {
+            //2. Get user using email
+            var user = GetUserByEmail(request.Email);
+
+            if (user == null)
+            {
+                return BadRequest("Email is not registered");
+            }
+
+            if (!user.EmailConfirmed)
+            {
+                return BadRequest("Email is not confirmed");
+            }
+            //3. Encrypt password using salt s
+            var encryptedPassword = HashPasswordWithSalt(Encoding.UTF8.GetBytes(request.Password),
+                                                            Convert.FromBase64String(user.Salt));
+            var base64Password = Convert.ToBase64String(encryptedPassword);
+            //4. match with existing password; if matches then generate access token else bad request
+            if (base64Password == user.Password)
+            {
+                //Serialize JSON object :ExpiryDateTime and UserId
+                var LoginRes = new LoginResponse();
+                var stringObj = Newtonsoft.Json.JsonConvert.SerializeObject(
+                                      new
+                                      {
+                                          ExpiryDate = DateTime.UtcNow.AddDays(1).ToString("yyyyMMddHHmmss"),
+                                          UserId = user.UserId
+                                      });
+
+                var encrypt = CryptograpyHelper.Encrypt(user.Email, user.Salt, stringObj);
+                var decrypt = CryptograpyHelper.Decrypt(user.Email, user.Salt, encrypt);
+                return Ok(true);
+            }
+            return Unauthorized("Not Authorized to login");
+
+           
+            //5. AccessToken Generate
+
+        }
 
         #endregion
 
@@ -117,7 +159,8 @@ namespace API.Controllers
             var encryptToken = "";
             if (user != null)
             {
-                encryptToken = CryptograpyHelper.Encrypt(user.Email, user.Salt, DateTime.UtcNow.AddDays(1).ToString("yyyyMMddHHmmss"));
+                encryptToken = CryptograpyHelper.Encrypt(user.Email, user.Salt,
+                                                    DateTime.UtcNow.AddDays(1).ToString("yyyyMMddHHmmss"));
             }
 
             var baseUrl = _configuration.GetValue<string>("AppBaseUrl");
