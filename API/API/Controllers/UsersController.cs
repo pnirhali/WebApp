@@ -118,6 +118,7 @@ namespace API.Controllers
             var encryptedPassword = HashPasswordWithSalt(Encoding.UTF8.GetBytes(request.Password),
                                                             Convert.FromBase64String(user.Salt));
             var base64Password = Convert.ToBase64String(encryptedPassword);
+
             //4. match with existing password; if matches then generate access token else bad request
             if (base64Password == user.Password)
             {
@@ -130,14 +131,22 @@ namespace API.Controllers
                                           UserId = user.UserId
                                       });
 
-                var encrypt = CryptograpyHelper.Encrypt(user.Email, user.Salt, stringObj);
-                var decrypt = CryptograpyHelper.Decrypt(user.Email, user.Salt, encrypt);
-                return Ok(true);
+                //Hard coded guid as MAchine key in app setting :To Do : replace it with server machine key;
+                var machineKey = _configuration.GetValue<string>("MachineKey");
+                var bytesMachineKey = Encoding.UTF8.GetBytes(machineKey);
+                var accessToken = CryptograpyHelper.Encrypt(user.Email, Convert.ToBase64String(bytesMachineKey), stringObj);
+
+                // var decrypt = CryptograpyHelper.Decrypt(user.Email, Convert.ToBase64String(bytesMachineKey), accessToken);
+
+                //return LoginResponse object :with Acess Token and expiry date
+                var response = new LoginResponse
+                {
+                    AccessToken = accessToken,
+                    ExpiryDateTime = DateTime.UtcNow.AddDays(1).ToString()
+                };
+                return Ok(response);
             }
             return Unauthorized("Not Authorized to login");
-
-           
-            //5. AccessToken Generate
 
         }
 
